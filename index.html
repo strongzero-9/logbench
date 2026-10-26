@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Log Bench – Apple Log LUT preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-512.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Log Bench">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#16171a">
+<style>
+:root{--bg:#f2f0eb;--surf:#fff;--ink:#1b1c1f;--mute:#6d6f75;--line:#d9d6cf;--acc:#b9770e;--accink:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#16171a;--surf:#202227;--ink:#ebe8e2;--mute:#9a9ca3;--line:#34363d;--acc:#e3b341;--accink:#1b1c1f}}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Schibsted Grotesk",system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:18px 16px 40px}
+h1{font-size:30px;font-weight:800;letter-spacing:-.02em;margin:4px 0 2px}
+.sub{color:var(--mute);margin:0 0 16px;max-width:52ch}
+.stage{position:relative;background:#000;border-radius:10px;overflow:hidden;min-height:180px;display:flex;align-items:center;justify-content:center;touch-action:none}
+canvas{display:block;width:100%;height:auto;max-height:60vh;object-fit:contain}
+.empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#aaa;text-align:center;padding:20px;pointer-events:none}
+.split{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);display:none;pointer-events:none}
+.split i{position:absolute;top:50%;left:-13px;width:28px;height:28px;border-radius:50%;background:var(--acc);transform:translateY(-50%)}
+.tag{position:absolute;top:8px;font-size:12px;font-weight:600;background:rgba(0,0,0,.6);color:#fff;padding:2px 8px;border-radius:99px;display:none;pointer-events:none}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--surf);color:var(--ink);padding:10px 14px;border-radius:8px;cursor:pointer;min-height:44px}
+button.p,.btn.p{background:var(--acc);color:var(--accink);border-color:var(--acc)}
+button:focus-visible,.btn:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+.panel{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:6px 14px 12px}
+.ctl{display:grid;grid-template-columns:96px 1fr 52px;align-items:center;gap:10px;padding:6px 0}
+.ctl output{text-align:right;color:var(--mute);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--acc);height:32px}
+.modes{display:flex;gap:6px;padding:8px 0}
+.modes button{flex:1;padding:8px;font-size:14px}
+.modes button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.status{color:var(--mute);font-size:14px;margin:10px 0 0;min-height:20px}
+.err{color:#c2410c}
+.note{color:var(--mute);font-size:13px;margin-top:16px;max-width:62ch}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;z-index:20}
+#modal img,#modal video{max-width:100%;max-height:72vh;border-radius:6px}
+#modal p{color:#ddd;margin:0;text-align:center}
+.namerow{display:flex;align-items:center;gap:6px;width:100%;max-width:360px}
+.namerow input{flex:1;min-width:0;font:inherit;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surf);color:var(--ink);min-height:44px}
+.namerow span{color:#ddd}
+html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
+:root{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+body{-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.namerow input{-webkit-user-select:text;user-select:text}
+canvas{max-height:60dvh}
+.stage{touch-action:pan-y}
+#shareBtn{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<h1>Log Bench</h1>
+<p class="sub">Load Apple Log footage or a still, drop in a .cube LUT, and see the grade live. Everything runs on your device.</p>
+
+<div class="stage" id="stage">
+  <canvas id="cv" width="16" height="9"></canvas>
+  <div class="empty" id="empty"><b>No media yet</b><span>Choose a clip or photo to begin</span></div>
+  <div class="split" id="split"><i></i></div>
+  <span class="tag" id="tagL" style="left:8px">Log</span>
+  <span class="tag" id="tagR" style="right:8px">Graded</span>
+</div>
+
+<div class="row">
+  <label class="btn p" tabindex="0">Choose clip or photo<input type="file" id="media" accept="video/*,image/*"></label>
+  <label class="btn" tabindex="0">Load .cube LUT<input type="file" id="lutfile"></label>
+  <button id="play" hidden>Pause</button>
+  <button id="save">Export frame</button>
+  <button id="vid" hidden>Export video</button>
+</div>
+
+<div class="panel">
+  <div class="modes" role="group" aria-label="Grade source">
+    <button id="mLut" aria-pressed="true">My LUT</button>
+    <button id="mBuilt" aria-pressed="false">Built-in Rec.709</button>
+  </div>
+  <div class="ctl"><label for="inten">Intensity</label><input type="range" id="inten" min="0" max="100" value="100"><output id="oI">100%</output></div>
+  <div class="ctl"><label for="ev">Exposure</label><input type="range" id="ev" min="-30" max="30" value="0"><output id="oE">0.0 EV</output></div>
+  <div class="ctl"><label for="cmp">Compare</label><input type="range" id="cmp" min="0" max="100" value="100"><output id="oC">Off</output></div>
+</div>
+<p class="status" id="status">Load a LUT that expects Apple Log input, such as Apple’s own Apple Log to Rec. 709 LUT.</p>
+<p class="note">Exposure shifts the Apple Log signal before the LUT, one stop at a time. The built-in mode is a quick approximation (Apple Log decode, Rec. 2020 to Rec. 709, filmic curve) for when you have no LUT. Apple Log .mov files play in Safari; other browsers may not decode them. On iPhone, pick clips from Files rather than Photos, since Photos may convert Apple Log footage before the app sees it. 1D LUTs aren’t supported.</p>
+</main>
+
+<div id="modal" role="dialog" aria-label="Exported frame">
+  <img id="outimg" alt="Exported graded frame">
+  <video id="outvid" controls playsinline style="display:none"></video>
+  <p id="outnote">Press and hold the image to save it, or use the share menu.</p>
+  <div class="namerow"><input id="fname" type="text" aria-label="File name" autocomplete="off" autocapitalize="off" spellcheck="false" value="graded"><span id="fext">.png</span></div>
+  <button id="saveBtn" class="p" style="display:none">Save to Photos or Files</button>
+  <button id="shareBtn" style="display:none">Share</button>
+  <button id="closeM" class="p">Close</button>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const cv=$('cv'), gl=cv.getContext('webgl2',{preserveDrawingBuffer:true,premultipliedAlpha:false});
+const status=(t,e)=>{const s=$('status');s.textContent=t;s.className='status'+(e?' err':'')};
+if(!gl){status('This browser doesn’t support WebGL2, which the grading engine needs.',1);return}
+
+const VS=`#version 300 es
+in vec2 p;out vec2 uv;void main(){uv=p*.5+.5;uv.y=1.-uv.y;gl_Position=vec4(p,0.,1.);}`;
+const FS=`#version 300 es
+precision highp float;precision highp sampler3D;
+in vec2 uv;out vec4 o;
+uniform sampler2D src;uniform sampler3D lut;
+uniform float N,inten,off,split,mode;uniform vec3 dmin,dmax;
+vec3 appleLogToLin(vec3 P){
+  const float R0=-0.05641088,c=47.28711236,b=0.00964052,g=0.08550479,d=0.69336945;
+  float Pt=c*pow(0.01-R0,2.);
+  vec3 hi=exp2((P-d)/g)-b, lo=sqrt(max(P,0.)/c)+R0;
+  return vec3(P.r>=Pt?hi.r:lo.r,P.g>=Pt?hi.g:lo.g,P.b>=Pt?hi.b:lo.b);
+}
+vec3 toRec709(vec3 P){
+  vec3 l=appleLogToLin(P);
+  l=vec3(dot(vec3(1.660491,-0.587641,-0.072850),l),dot(vec3(-0.124550,1.132900,-0.008349),l),dot(vec3(-0.018151,-0.100579,1.118730),l));
+  l=max(l,0.)*1.1;
+  l=clamp((l*(2.51*l+.03))/(l*(2.43*l+.59)+.14),0.,1.);
+  vec3 lo=l*12.92, hi=1.055*pow(max(l,vec3(.0031308)),vec3(1./2.4))-.055;
+  return vec3(l.r<.0031308?lo.r:hi.r, l.g<.0031308?lo.g:hi.g, l.b<.0031308?lo.b:hi.b);
+}
+void main(){
+  vec3 a=texture(src,uv).rgb;
+  vec3 x=clamp(a+off,0.,1.);
+  vec3 g;
+  if(mode>.5){g=toRec709(x);}
+  else{
+    vec3 t=clamp((x-dmin)/(dmax-dmin),0.,1.);
+    t=t*(N-1.)/N+.5/N;
+    g=texture(lut,t).rgb;
+  }
+  g=mix(a,g,inten);
+  o=vec4(uv.x<split?a:g,1);
+}`;
+function sh(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(x);return x}
+const pr=gl.createProgram();
+try{gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw gl.getProgramInfoLog(pr)}catch(e){status('Shader error: '+e,1);window.__shaderErr=1}
+if(window.__shaderErr)return;
+gl.useProgram(pr);
+const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const loc=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+const U=n=>gl.getUniformLocation(pr,n);
+const u={src:U('src'),lut:U('lut'),N:U('N'),inten:U('inten'),off:U('off'),split:U('split'),mode:U('mode'),dmin:U('dmin'),dmax:U('dmax')};
+
+const tex=gl.createTexture();
+gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);
+[gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T].forEach(k=>gl.texParameteri(gl.TEXTURE_2D,k,gl.CLAMP_TO_EDGE));
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+const lutTex=gl.createTexture();
+const floatLin=!!gl.getExtension('OES_texture_float_linear');
+
+const S={el:null,kind:null,hasLut:false,N:2,dmin:[0,0,0],dmax:[1,1,1],mode:0,inten:1,ev:0,cmp:1,vid:false};
+// identity placeholder LUT so shader always has a bound 3D texture
+setLut(2,new Float32Array([0,0,0,1,0,0,0,1,0,1,1,0,0,0,1,1,0,1,0,1,1,1,1,1]));
+
+function setLut(N,data){
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_3D,lutTex);
+  [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T,gl.TEXTURE_WRAP_R].forEach(k=>gl.texParameteri(gl.TEXTURE_3D,k,gl.CLAMP_TO_EDGE));
+  const f=floatLin?gl.LINEAR:gl.LINEAR; // 8-bit fallback is always filterable
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,f);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,f);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+  if(floatLin){
+    gl.texImage3D(gl.TEXTURE_3D,0,gl.RGB32F,N,N,N,0,gl.RGB,gl.FLOAT,data);
+  }else{
+    const q=new Uint8Array(N*N*N*3);
+    for(let i=0;i<q.length;i++)q[i]=Math.round(Math.min(1,Math.max(0,data[i]))*255);
+    gl.texImage3D(gl.TEXTURE_3D,0,gl.RGB8,N,N,N,0,gl.RGB,gl.UNSIGNED_BYTE,q);
+  }
+  S.N=N;
+}
+
+function parseCube(txt){
+  let N=0,title='',dmin=[0,0,0],dmax=[1,1,1];const v=[];
+  for(const raw of txt.replace(/^\uFEFF/,'').split(/\r?\n|\r/)){
+    const l=raw.trim();if(!l||l[0]==='#')continue;
+    const w=l.split(/\s+/);
+    if(w[0]==='TITLE')title=l.replace(/^TITLE\s+/,'').replace(/"/g,'');
+    else if(w[0]==='LUT_3D_SIZE')N=parseInt(w[1]);
+    else if(w[0]==='LUT_1D_SIZE')throw new Error('This is a 1D LUT. Load a 3D .cube file.');
+    else if(w[0]==='DOMAIN_MIN')dmin=w.slice(1,4).map(Number);
+    else if(w[0]==='DOMAIN_MAX')dmax=w.slice(1,4).map(Number);
+    else if(/^[-+0-9.]/.test(w[0])&&w.length>=3)v.push(+w[0],+w[1],+w[2]);
+  }
+  if(!N)throw new Error('No LUT_3D_SIZE found. Is this a .cube file?');
+  if(v.length!==N*N*N*3)throw new Error('LUT has '+v.length/3+' entries, expected '+N*N*N+'.');
+  return {N,title,dmin,dmax,data:new Float32Array(v)};
+}
+
+$('lutfile').addEventListener('change',async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const L=parseCube(await f.text());
+    setLut(L.N,L.data);S.dmin=L.dmin;S.dmax=L.dmax;S.hasLut=true;
+    setMode(0);
+    status('LUT loaded: '+(L.title||f.name)+' ('+L.N+'³). Make sure it expects Apple Log input.');
+    draw();
+  }catch(err){status(err.message,1)}
+  e.target.value='';
+});
+
+let raf=0;
+$('media').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const url=URL.createObjectURL(f);
+  cancelAnimationFrame(raf);
+  if(S.el&&S.vid){S.el.pause();S.el.removeAttribute('src');S.el.remove()}
+  if(f.type.startsWith('video')||/\.(mov|mp4|m4v)$/i.test(f.name)){
+    status('Loading clip…');
+    const v=document.createElement('video');
+    v.muted=true;v.defaultMuted=true;v.loop=true;v.playsInline=true;v.preload='auto';
+    v.setAttribute('playsinline','');v.setAttribute('muted','');
+    v.style.cssText='position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.appendChild(v);
+    let started=false;
+    const go=()=>{
+      if(started||!v.videoWidth)return;started=true;
+      S.el=v;S.vid=true;fit(v.videoWidth,v.videoHeight);ready();
+      $('play').hidden=false;$('vid').hidden=false;$('play').textContent='Pause';
+      v.play().catch(()=>{$('play').textContent='Play'});loop();
+    };
+    ['loadedmetadata','loadeddata','canplay','playing'].forEach(ev=>v.addEventListener(ev,go));
+    v.onerror=()=>status('This browser can’t decode that clip'+(v.error?' (code '+v.error.code+')':'')+'. Try Safari for Apple Log .mov files.',1);
+    setTimeout(()=>{if(!started)status('Still loading. If nothing appears, the clip may be in a format this browser can’t play. Try a photo to confirm the app works.',1)},8000);
+    v.src=url;v.load();v.play().catch(()=>{});
+  }else{
+    const im=new Image();
+    status('Loading photo…');im.onload=()=>{S.el=im;S.vid=false;$('play').hidden=true;$('vid').hidden=true;fit(im.naturalWidth,im.naturalHeight);ready();draw()};
+    im.onerror=()=>status('Couldn’t read that image.',1);
+    im.src=url;
+  }
+  e.target.value='';
+});
+function fit(w,h){
+  const m=gl.getParameter(gl.MAX_TEXTURE_SIZE),k=Math.min(1,m/Math.max(w,h));
+  cv.width=Math.round(w*k);cv.height=Math.round(h*k);gl.viewport(0,0,cv.width,cv.height);
+}
+function ready(){
+  $('empty').style.display='none';
+  status(S.hasLut?'Ready. Drag on the picture to compare.':'Media loaded. Load a .cube LUT or switch to Built-in Rec.709.');
+  updCmp();
+}
+function loop(){draw();raf=requestAnimationFrame(loop)}
+$('play').onclick=()=>{
+  const v=S.el;if(!v||!S.vid)return;
+  if(v.paused){v.play();$('play').textContent='Pause';loop()}
+  else{v.pause();$('play').textContent='Play';cancelAnimationFrame(raf);draw()}
+};
+
+function draw(){
+  if(!S.el)return;
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  try{gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,S.el)}catch(e){return}
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_3D,lutTex);
+  gl.uniform1i(u.src,0);gl.uniform1i(u.lut,1);
+  gl.uniform1f(u.N,S.N);gl.uniform1f(u.inten,S.inten);
+  gl.uniform1f(u.off,S.ev*0.08550479);
+  gl.uniform1f(u.mode,S.mode);
+  gl.uniform3fv(u.dmin,S.dmin);gl.uniform3fv(u.dmax,S.dmax);
+  gl.uniform1f(u.split,S.cmp>=1?0:S.cmp);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+}
+
+function setMode(m){
+  S.mode=m;
+  $('mLut').setAttribute('aria-pressed',m===0);$('mBuilt').setAttribute('aria-pressed',m===1);
+  draw();
+}
+$('mLut').onclick=()=>{if(!S.hasLut)status('Load a .cube LUT first.',1);setMode(0)};
+$('mBuilt').onclick=()=>setMode(1);
+
+$('inten').oninput=e=>{S.inten=e.target.value/100;$('oI').textContent=e.target.value+'%';draw()};
+$('ev').oninput=e=>{S.ev=e.target.value/10;$('oE').textContent=(S.ev>0?'+':'')+S.ev.toFixed(1)+' EV';draw()};
+function updCmp(){
+  const on=S.cmp<1&&!!S.el;
+  $('split').style.display=on?'block':'none';
+  $('tagL').style.display=$('tagR').style.display=on?'block':'none';
+  $('split').style.left=(S.cmp*100)+'%';
+  $('oC').textContent=S.cmp>=1?'Off':Math.round(S.cmp*100)+'%';
+  $('cmp').value=Math.round(S.cmp*100);
+}
+$('cmp').oninput=e=>{S.cmp=e.target.value/100;updCmp();draw()};
+const stage=$('stage');
+function drag(e){
+  if(!S.el)return;
+  const r=cv.getBoundingClientRect();
+  S.cmp=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
+  if(S.cmp>.985)S.cmp=1;
+  updCmp();draw();
+}
+let down=false;
+stage.addEventListener('pointerdown',e=>{down=true;stage.setPointerCapture(e.pointerId);drag(e)});
+stage.addEventListener('pointermove',e=>{if(down)drag(e)});
+stage.addEventListener('pointerup',()=>down=false);
+
+$('save').onclick=()=>{
+  if(!S.el){status('Load media first.',1);return}
+  draw();
+  try{
+    $('outimg').src=cv.toDataURL('image/png');
+    $('outimg').style.display='';$('outvid').style.display='none';$('shareBtn').style.display='none';
+    S.outFile=null;$('fname').value=toon();$('fext').textContent='.png';cv.toBlob(b=>{if(b)S.outFile=new File([b],'graded-frame.png',{type:'image/png'})},'image/png');
+    $('saveBtn').style.display=S.dl?'':'none';
+    $('shareBtn').style.display=navigator.share?'':'none';
+    $('outnote').textContent='Tap Save to Photos or Files, or press and hold the image.';
+    $('modal').style.display='flex';
+  }catch(e){status('Export failed: '+e.message,1)}
+};
+let rec=null;
+$('vid').onclick=()=>{
+  const v=S.el;if(!v||!S.vid)return;
+  if(rec){rec.stop();return}
+  if(!window.MediaRecorder||!cv.captureStream){status('This browser can’t record video.',1);return}
+  const type=['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||'';
+  let aTrack=null;
+  try{
+    if(!v._dest){
+      const AC=window.AudioContext||window.webkitAudioContext;
+      const ac=new AC();
+      const src=ac.createMediaElementSource(v);
+      const dest=ac.createMediaStreamDestination();
+      src.connect(dest);
+      v._ac=ac;v._dest=dest;
+    }
+    v._ac.resume();
+    v.muted=false;
+    aTrack=v._dest.stream.getAudioTracks()[0]||null;
+  }catch(e){aTrack=null}
+  const vs=cv.captureStream(30);
+  if(aTrack)vs.addTrack(aTrack);
+  const chunks=[];let r;const hasAudio=!!aTrack;
+  try{r=new MediaRecorder(vs,type?{mimeType:type,videoBitsPerSecond:20e6}:{videoBitsPerSecond:20e6})}catch(e){status('Recording failed: '+e.message,1);return}
+  rec=r;
+  r.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+  r.onstop=()=>{
+    rec=null;try{v._wl&&v._wl.release()}catch(e){}v.loop=true;v.muted=true;v.play().catch(()=>{});$('vid').textContent='Export video';
+    const mt=(r.mimeType||type||'video/mp4').split(';')[0];
+    const blob=new Blob(chunks,{type:mt});
+    S.outFile=new File([blob],'graded.'+(mt.includes('mp4')?'mp4':'webm'),{type:mt});
+    $('fname').value=toon();$('fext').textContent=mt.includes('mp4')?'.mp4':'.webm';
+    $('outvid').src=URL.createObjectURL(blob);
+    $('outvid').style.display='';$('outimg').style.display='none';
+    $('shareBtn').style.display=navigator.share?'':'none';
+    $('saveBtn').style.display=S.dl?'':'none';
+    $('outnote').textContent='Graded video, '+(blob.size/1048576).toFixed(1)+' MB. Tap Save to Photos or Files, or press and hold the video.';
+    $('modal').style.display='flex';
+    status(hasAudio?'Video exported with audio.':'Video exported without audio. This browser couldn’t capture the clip’s sound.');
+  };
+  cancelAnimationFrame(raf);
+  v.loop=false;v.currentTime=0;
+  v.addEventListener('ended',()=>{if(rec)rec.stop()},{once:true});
+  r.start(500);
+  try{if(navigator.wakeLock)navigator.wakeLock.request('screen').then(w=>{v._wl=w}).catch(()=>{})}catch(e){}
+  v.play().catch(()=>{});loop();
+  $('vid').textContent='Stop recording';
+  status('Recording the clip once in real time. Keep this tab open until it finishes.');
+};
+$('shareBtn').onclick=async()=>{
+  try{await navigator.share({files:[new File([S.outFile],outName(),{type:S.outFile.type})]})}
+  catch(e){if(e.name!=='AbortError')status('Sharing isn’t available here. Press and hold the video to save it.',1)}
+};
+const TOONS=['Bugs-Bunny','Daffy-Duck','Tweety','Porky-Pig','Road-Runner','Scooby-Doo','Shaggy','Fred-Flintstone','Wilma','Barney-Rubble','George-Jetson','Yogi-Bear','Top-Cat','Popeye','Betty-Boop','Felix-the-Cat','Mickey-Mouse','Donald-Duck','Goofy','Pluto','Tom','Jerry','Snoopy','Charlie-Brown','Homer-Simpson','Bart-Simpson','Lisa-Simpson','Peter-Griffin','Stewie','Rick-Sanchez','Morty','SpongeBob','Patrick-Star','Squidward','Finn','Jake-the-Dog','Dexter','Johnny-Bravo','Bluey','Bingo','Courage','Pink-Panther','Inspector-Gadget','Garfield','Odie','Mr-Magoo','Speedy-Gonzales','Foghorn-Leghorn'];
+function toon(){return TOONS[Math.floor(Math.random()*TOONS.length)]}
+function outName(){
+  const ext=S.outFile?S.outFile.name.split('.').pop():'png';
+  let n=($('fname').value||'').replace(/[^\w .()-]+/g,'-').trim();
+  if(n.toLowerCase().endsWith('.'+ext))n=n.slice(0,-ext.length-1);
+  return (n||'graded')+'.'+ext;
+}
+$('saveBtn').onclick=async()=>{
+  if(!S.dl||!S.outFile){status('Nothing to save yet. Try again in a moment.',1);return}
+  try{await S.dl.save({filename:outName(),data:S.outFile});status('Saved.')}
+  catch(e){if(!e||(e.code!=='declined'&&e.name!=='AbortError'))status('Couldn’t save: '+((e&&(e.message||e.code))||'unknown error'),1)}
+};
+S.dl={save:async({filename,data})=>{
+  const f=new File([data],filename,{type:data.type});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=filename;document.body.appendChild(a);a.click();setTimeout(()=>a.remove(),1500)
+}};
+$('closeM').onclick=()=>{$('modal').style.display='none';$('outvid').pause()};
+document.querySelectorAll('label.btn').forEach(l=>l.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();l.querySelector('input').click()}}));
+})();
+</script>
+<script>if("serviceWorker" in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("sw.js").catch(()=>{});</script>
+</body>
+</html>
